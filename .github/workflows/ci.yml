@@ -123,3 +123,41 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
+  publish:
+    name: Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load -i /tmp/fastapi-image.tar
+
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag Docker image
+        run: |
+          docker tag local/fastapi-ci:scan "$IMAGE_NAME:sha-${GITHUB_SHA}"
+
+      - name: Push Docker image
+        run: |
+          docker push "$IMAGE_NAME:sha-${GITHUB_SHA}"
