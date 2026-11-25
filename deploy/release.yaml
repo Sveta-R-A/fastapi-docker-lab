@@ -1,0 +1,37 @@
+app: hpk-fastapi
+environment: production
+
+image:
+  registry: ghcr.io
+  repository: OWNER/REPOSITORY
+  tag: sha-REPLACE_WITH_FULL_COMMIT_SHA
+
+container:
+  port: 8000
+
+health:
+  path: /common/healthcheck
+
+strategy:
+  type: canary
+  stages: [0, 10, 50, 100]
+
+# Готові конфігурації для двох варіантів лабораторної:
+platforms:
+  google_cloud_run:
+    region: europe-west1
+    resources:
+      cpu: "1"
+      memory: 512Mi
+    scaling:
+      min_instances: 0
+      max_instances: 2
+
+  azure_container_apps:
+    region: westeurope
+    resources:
+      cpu: 0.5
+      memory: 1Gi
+    scaling:
+      min_replicas: 0
+      max_replicas: 2
