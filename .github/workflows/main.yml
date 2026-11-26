@@ -1,4 +1,5 @@
-﻿name: FastAPI CI/CD
+
+name: FastAPI CI/CD
 
 on:
   push:
@@ -136,8 +137,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: docker-image
           path: /tmp
@@ -161,3 +161,28 @@ jobs:
       - name: Push Docker image
         run: docker push "$IMAGE_NAME:sha-${GITHUB_SHA}"
 
+  deploy:
+    name: Deploy to Google Cloud Run
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${{ vars.GCP_SERVICE }}" \
+            --image "ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --platform managed \
+            --allow-unauthenticated
