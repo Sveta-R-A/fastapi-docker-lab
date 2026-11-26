@@ -1,0 +1,17 @@
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: hpk-fastapi
+  namespace: project-361c5918-3a3f-4592-851
+spec:
+  template:
+    spec:
+      containerConcurrency: 80
+      containers:
+        - image: ghcr.io/sveta-r-a/fastapi-docker-lab:latest
+          ports:
+            - containerPort: 8080
+  traffic:
+    - latestRevision: true
+      percent: 100
