@@ -161,6 +161,7 @@ jobs:
       - name: Push Docker image
         run: docker push "$IMAGE_NAME:sha-${GITHUB_SHA}"
 
+ 
   deploy:
     name: Deploy to Google Cloud Run
     needs: publish
@@ -168,6 +169,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      service_url: ${{ steps.get-url.outputs.service_url }}
     steps:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -186,3 +189,72 @@ jobs:
             --project "${{ vars.GCP_PROJECT_ID }}" \
             --platform managed \
             --allow-unauthenticated
+
+      - name: Get Cloud Run URL
+        id: get-url
+        run: |
+          SERVICE_URL=$(gcloud run services describe "${{ vars.GCP_SERVICE }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --format="value(status.url)")
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "Cloud Run URL: $SERVICE_URL"
+
+  smoke:
+    name: Smoke Test Deployed API
+    needs: deploy
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_URL: ${{ needs.deploy.outputs.service_url }}
+    steps:
+      - name: Check API health and documentation
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+          import urllib.error
+
+          base_url = os.environ["SERVICE_URL"].rstrip("/")
+
+          def check_endpoint(path, expected_status=200):
+              url = base_url + path
+              last_error = None
+
+              for attempt in range(5):
+                  try:
+                      request = urllib.request.Request(
+                          url,
+                          headers={"User-Agent": "GitHub-Actions-Smoke-Test"}
+                      )
+                      with urllib.request.urlopen(request, timeout=20) as response:
+                          body = response.read().decode("utf-8")
+                          if response.status != expected_status:
+                              raise RuntimeError(
+                                  f"{path}: expected HTTP {expected_status}, "
+                                  f"got {response.status}"
+                              )
+                          return body
+                  except Exception as error:
+                      last_error = error
+                      print(f"Attempt {attempt + 1}/5 failed: {error}")
+                      if attempt < 4:
+                          time.sleep(3)
+
+              raise RuntimeError(f"{path} failed: {last_error}")
+
+          health_body = check_endpoint("/health")
+          health_data = json.loads(health_body)
+
+          if health_data.get("status") != "ok":
+              raise RuntimeError(
+                  f"Unexpected health status: {health_data}"
+              )
+
+          print(f"Health check passed: {health_data}")
+
+          check_endpoint("/docs")
+          print("Swagger documentation check passed")
+          PY
+
